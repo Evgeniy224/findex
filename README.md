@@ -105,3 +105,64 @@ uv run python src/findex/search.py index.bin "документ not систем�
 Пошук з JSON-індексом:
 uv run python src/findex/search.py index.json "пошукова"
 ![img_5.png](img_5.png)
+
+
+---
+
+# Лабораторна 3: Рейтинг і модель об'єктів
+
+## Що було зроблено
+
+У цій лабораторній ми перетворили наш індекс на повноцінний об'єкт Python та додали ранжування результатів.
+
+### M1: Рефакторинг у клас `Index`
+*   Створено клас `Index`, який поводиться як незмінний словник (`Mapping`):
+    *   `__getitem__`, `__iter__`, `__len__`, `__contains__` — доступ до постінгів.
+    *   `__repr__` — зручне відображення.
+    *   `num_docs`, `avg_doc_length` (`@cached_property`) — властивості.
+    *   `df(term)` — document frequency.
+*   Створено контекстний менеджер `open_index()` для безпечного завантаження індексу.
+
+### M2: Ранжування (TF-IDF та BM25)
+*   Створено протокол `Scorer` та дві його реалізації: `TfIdf` та `BM25(k1=1.5, b=0.75)`.
+*   Результати пошуку повертаються як `SearchResult` (з полями `score`, `doc_id`, `snippet`), відсортовані
+за спаданням оцінки.
+*   Використовується `heapq.nlargest` для ефективного відбору топ-k.
+
+### M3: Парсер запитів
+*   Створено рекурсивний парсер `query_parser.py`, який підтримує:
+    *   Дужки: `python AND (async OR await)`.
+    *   Фрази в лапках: `"event loop"`.
+    *   Оператори: `AND`, `OR`, `NOT`.
+*   Вузли дерева запиту: `Term`, `Phrase`, `And`, `Or`, `Not` з методом `evaluate(index)`.
+
+### M4: Декоратори та сніпети
+*   Створено декоратор `@timed` (з `functools.wraps`), який логує час виконання функції.
+![img_10.png](img_10.png)
+*   Реалізовано кешування результатів пошуку (ручний словник `_search_cache`).
+![img_11.png](img_11.png)
+*   Додано генерацію сніпетів: вікно ±80 символів навколо найкращого входження термінів з підсвіткою 
+(`*термін*`).
+
+## Таблиця precision@5
+
+*(Цей розділ буде заповнено після ручної розмітки 10 запитів. Поки що ми маємо лише демонстраційні дані.)*
+
+## Приклади запитів
+
+# Простий пошук з TF-IDF
+uv run python src/findex/search.py index.json "пошукова" --scorer tfidf
+![img_6.png](img_6.png)
+
+# Пошук з BM25
+uv run python src/findex/search.py index.json "пошукова" --scorer bm25
+![img_7.png](img_7.png)
+
+# Складний запит з дужками
+uv run python src/findex/search.py index.json "пошукова AND (система OR документ)"
+![img_8.png](img_8.png)
+
+# Запит з NOT
+uv run python src/findex/search.py index.json "документ NOT система"
+![img_9.png](img_9.png)
+

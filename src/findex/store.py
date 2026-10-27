@@ -1,23 +1,14 @@
-import pickle
 import json
+import pickle
 from pathlib import Path
-from findex.index import Posting, DocMeta
+from contextlib import contextmanager
+from findex.index import Posting, DocMeta, Index
 
 
 def save_index(postings: dict[str, list[Posting]], doc_meta: dict[int, DocMeta], path: Path):
-    """Зберігає індекс у файл через pickle."""
-    with open(path, "wb") as f:
-        pickle.dump((postings, doc_meta), f)
-
-
-def load_index(path: Path) -> tuple[dict[str, list[Posting]], dict[int, DocMeta]]:
-    """Завантажує індекс з файлу pickle."""
-    with open(path, "rb") as f:
-        return pickle.load(f)
-
-
-def save_index_json(postings: dict[str, list[Posting]], doc_meta: dict[int, DocMeta], path: Path):
-    """Зберігає індекс у JSON (безпечно, але повільніше)."""
+    """
+    Зберігає індекс у JSON (безпечно, читабельно, без проблем з pickle).
+    """
     data = {
         "postings": {
             term: [{"doc_id": p.doc_id, "tf": p.tf} for p in plist]
@@ -32,8 +23,10 @@ def save_index_json(postings: dict[str, list[Posting]], doc_meta: dict[int, DocM
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def load_index_json(path: Path) -> tuple[dict[str, list[Posting]], dict[int, DocMeta]]:
-    """Завантажує індекс з JSON."""
+def load_index(path: Path) -> tuple[dict[str, list[Posting]], dict[int, DocMeta]]:
+    """
+    Завантажує індекс з JSON.
+    """
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -46,3 +39,16 @@ def load_index_json(path: Path) -> tuple[dict[str, list[Posting]], dict[int, Doc
         for doc_id, meta in data["doc_meta"].items()
     }
     return postings, doc_meta
+
+
+@contextmanager
+def open_index(path: Path):
+    """
+    Контекстний менеджер для завантаження індексу.
+    """
+    postings, doc_meta = load_index(path)
+    index_obj = Index(postings, doc_meta)
+    try:
+        yield index_obj
+    finally:
+        pass
