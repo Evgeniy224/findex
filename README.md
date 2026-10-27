@@ -77,34 +77,31 @@ uv run python src/findex/stats.py data/
 *   Варіант з `array('I')` взагалі не створює об'єктів Python для кожного постінгу, а зберігає дані як
 сирі 4-байтові числа, що дає найбільшу економію пам'яті (до 9 разів на великих даних), але ускладнює код.
 
-
-
 ## Як запустити
 
 ### Побудова індексу:
-```bash
 
-# У форматі pickle
+У форматі pickle:
 uv run python src/findex/index.py data/ --out index.bin
+![img.png](img.png)
+
+У форматі JSON:
+uv run python src/findex/index.py data/ --out index.json
+![img_1.png](img_1.png)
+
+Пошук:
+Простий AND:
+uv run python src/findex/search.py index.bin "пошукова"
 ![img_2.png](img_2.png)
 
-# У форматі JSON
-uv run python src/findex/index.py data/ --out index.json
+OR:
+uv run python src/findex/search.py index.bin "пошукова or система"
 ![img_3.png](img_3.png)
 
-# Простий AND
-uv run python src/findex/search.py index.bin "пошукова"
+NOT:
+uv run python src/findex/search.py index.bin "документ not система"
 ![img_4.png](img_4.png)
 
-# OR
-uv run python src/findex/search.py index.bin "пошукова or система"
-![img_7.png](img_7.png)
-
-# NOT
-uv run python src/findex/search.py index.bin "документ not система"
-![img_5.png](img_5.png)
-
-# Пошук з JSON-індексом
+Пошук з JSON-індексом:
 uv run python src/findex/search.py index.json "пошукова"
-![img_6.png](img_6.png)
-
+![img_5.png](img_5.png)
