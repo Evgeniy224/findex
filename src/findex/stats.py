@@ -96,6 +96,9 @@ if __name__ == "__main__":
     print(f"Словник: {lazy_results['vocabulary']}")
     print(f"Час: {lazy_results['elapsed']:.4f} сек")
     print(f"Пікова пам'ять: {lazy_results['peak_memory_mb']:.4f} МБ")
+    print("\nТоп-50 термів (лінива версія):")
+    for term, count in lazy_results['top_50']:
+        print(f"  {term}: {count}")
 
     print("\n--- Жадібна версія (списки) ---")
     eager_results = run_eager(args.root, args.limit)
