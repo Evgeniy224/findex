@@ -1,31 +1,33 @@
 import math
 from dataclasses import dataclass
+from typing import Protocol
+
 from findex.index import Index
 
 
-@dataclass(order=True)
+@dataclass(order=True, frozen=True, slots=True)
 class SearchResult:
-    """Результат пошуку, який сортується за score (спадання)."""
+    """Результат пошуку, відсортований за спаданням score."""
+
     score: float
     doc_id: int
-    snippet: str = ""  # Поки що порожній, додамо пізніше
+    snippet: str = ""
 
 
-class Scorer:
-    """Базовий протокол для всіх алгоритмів ранжування."""
+class Scorer(Protocol):
+    """Структурний протокол для алгоритмів ранжування."""
 
     def score(self, index: Index, term: str, doc_id: int) -> float:
-        raise NotImplementedError
+        ...
 
 
-class TfIdf(Scorer):
-    """Алгоритм TF-IDF."""
+class TfIdf:
+    """Алгоритм ранжування TF-IDF."""
 
     def score(self, index: Index, term: str, doc_id: int) -> float:
         if term not in index:
             return 0.0
 
-        # Знаходимо tf (term frequency) для цього документа
         tf = 0
         for posting in index[term]:
             if posting.doc_id == doc_id:
@@ -35,22 +37,19 @@ class TfIdf(Scorer):
         if tf == 0:
             return 0.0
 
-        # IDF (inverse document frequency)
-        df = index.df(term)
-        idf = math.log(index.num_docs / (df + 1)) + 1  # +1 для згладжування
-
-        # Нормалізуємо на довжину документа
-        doc_len = index.get_doc_meta(doc_id).length
-        if doc_len == 0:
+        meta = index.get_doc_meta(doc_id)
+        if meta is None or meta.length == 0:
             return 0.0
 
-        return (tf / doc_len) * idf
+        df = index.df(term)
+        idf = math.log(index.num_docs / (df + 1)) + 1.0
+        return (tf / meta.length) * idf
 
 
-class BM25(Scorer):
-    """Алгоритм BM25 (Okapi BM25)."""
+class BM25:
+    """Алгоритм ранжування Okapi BM25."""
 
-    def __init__(self, k1: float = 1.5, b: float = 0.75):
+    def __init__(self, k1: float = 1.5, b: float = 0.75) -> None:
         self.k1 = k1
         self.b = b
 
@@ -58,7 +57,6 @@ class BM25(Scorer):
         if term not in index:
             return 0.0
 
-        # Знаходимо tf
         tf = 0
         for posting in index[term]:
             if posting.doc_id == doc_id:
@@ -68,16 +66,13 @@ class BM25(Scorer):
         if tf == 0:
             return 0.0
 
-        # IDF
-        df = index.df(term)
-        idf = math.log((index.num_docs - df + 0.5) / (df + 0.5) + 1)
-
-        # Довжина документа
-        doc_len = index.get_doc_meta(doc_id).length
+        meta = index.get_doc_meta(doc_id)
         avg_dl = index.avg_doc_length
+        if meta is None or meta.length == 0 or avg_dl == 0.0:
+            return 0.0
 
-        # Формула BM25
-        numerator = tf * (self.k1 + 1)
-        denominator = tf + self.k1 * (1 - self.b + self.b * (doc_len / avg_dl))
-
+        df = index.df(term)
+        idf = math.log((index.num_docs - df + 0.5) / (df + 0.5) + 1.0)
+        numerator = tf * (self.k1 + 1.0)
+        denominator = tf + self.k1 * (1.0 - self.b + self.b * (meta.length / avg_dl))
         return idf * (numerator / denominator)

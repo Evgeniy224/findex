@@ -1,22 +1,54 @@
 [project]
 name = "findex"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.4.0"
+description = "Міні-пошукова система з інвертованим індексом, булевим парсером та ранжуванням TF-IDF/BM25"
 readme = "README.md"
 authors = [
     { name = "Bushkovskiy Evgeniy", email = "evgeniy.bushkovskiy@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "rich>=13.9.4",
+    "typer>=0.15.1",
+]
+
+[project.scripts]
+findex = "findex.cli:app"
 
 [build-system]
-requires = ["uv_build>=0.13.6,<0.14.0"]
-build-backend = "uv_build"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/findex"]
+
+[tool.hatch.build.targets.editable]
+packages = ["src/findex"]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.1.1",
-    "ruff>=0.17.3",
+    "hypothesis>=6.122.0",
+    "pyright>=1.1.390",
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.4",
 ]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+testpaths = ["tests"]
+markers = [
+    "slow: тести, що виконуються довше 1 секунди (наприклад, на великому корпусі)",
+]
+
+[tool.pyright]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+include = ["src", "tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

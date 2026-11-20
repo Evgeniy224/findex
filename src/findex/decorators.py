@@ -1,20 +1,20 @@
-import time
 import functools
 import logging
+import time
+from collections.abc import Callable
 
-# Налаштовуємо логування
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-def timed(func):
-    """
-    Декоратор, який вимірює час виконання функції.
-    Використовує functools.wraps, щоб зберегти ім'я та документацію оригінальної функції.
-    """
+
+def timed[**P, R](func: Callable[P, R]) -> Callable[P, R]:
+    """Декоратор, який логує час виконання функції у діагностичний логер."""
+
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         start = time.perf_counter()
         result = func(*args, **kwargs)
         elapsed = time.perf_counter() - start
-        logging.info(f"Функція {func.__name__} виконана за {elapsed:.4f} сек")
+        logger.debug("Функція %s виконана за %.4f сек", func.__name__, elapsed)
         return result
+
     return wrapper
