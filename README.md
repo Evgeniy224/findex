@@ -237,4 +237,9 @@ uv run python src/findex/search.py index.json "документ NOT систем
 **Оновити `uv.lock` і зібрати wheel-файл:**
    uv lock
    uv build --no-cache
+
 ![img_24.png](img_24.png)
+
+### Результати тестування та покриття
+
+![img_25.png](img_25.png)
