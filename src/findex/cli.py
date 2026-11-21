@@ -4,7 +4,7 @@ import logging
 import resource
 import sys
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TextIO
 
 import typer
 from rich.console import Console
@@ -56,6 +56,11 @@ def _fail(message: str, code: int = 1) -> typer.Exit:
 def _rss_mb() -> float:
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return rss / (1024 * 1024) if sys.platform == "darwin" else rss / 1024
+
+
+def _write_and_flush(file_handle: TextIO, lines: list[str]) -> None:
+    file_handle.writelines(lines)
+    file_handle.flush()
 
 
 def _build_crawl_table(stats: CrawlStats, max_pages: int, out_path: Path) -> Table:
@@ -136,8 +141,14 @@ def cmd_crawl(
                 refresh_per_second=8,
             ) as live,
         ):
-            log_fh.write(f"# User-Agent: {DEFAULT_USER_AGENT}\n")
-            log_fh.write("status\tbytes\telapsed_s\tattempts\turl\terror\n")
+            await asyncio.to_thread(
+                _write_and_flush,
+                log_fh,
+                [
+                    f"# User-Agent: {DEFAULT_USER_AGENT}\n",
+                    "status\tbytes\telapsed_s\tattempts\turl\terror\n",
+                ],
+            )
             flushed = 0
 
             async for page in crawl(
@@ -158,27 +169,31 @@ def cmd_crawl(
                     },
                     ensure_ascii=False,
                 )
-                jsonl_fh.write(line + "\n")
-                jsonl_fh.flush()
+                await asyncio.to_thread(_write_and_flush, jsonl_fh, [line + "\n"])
 
+                log_lines: list[str] = []
                 while flushed < len(records):
                     r = records[flushed]
-                    log_fh.write(
+                    log_lines.append(
                         f"{r.status}\t{r.num_bytes}\t{r.elapsed:.4f}\t"
                         f"{r.attempts}\t{r.url}\t{r.error or '-'}\n"
                     )
                     flushed += 1
-                log_fh.flush()
+                if log_lines:
+                    await asyncio.to_thread(_write_and_flush, log_fh, log_lines)
 
                 live.update(_build_crawl_table(stats, max_pages, out))
 
+            log_lines = []
             while flushed < len(records):
                 r = records[flushed]
-                log_fh.write(
+                log_lines.append(
                     f"{r.status}\t{r.num_bytes}\t{r.elapsed:.4f}\t"
                     f"{r.attempts}\t{r.url}\t{r.error or '-'}\n"
                 )
                 flushed += 1
+            if log_lines:
+                await asyncio.to_thread(_write_and_flush, log_fh, log_lines)
             live.update(_build_crawl_table(stats, max_pages, out))
 
     asyncio.run(_run_crawl(), debug=debug)

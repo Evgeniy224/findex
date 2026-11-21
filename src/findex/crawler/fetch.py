@@ -2,16 +2,19 @@ import asyncio
 import email.utils
 import random
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from urllib.parse import urljoin
 
 import httpx
 
 DEFAULT_USER_AGENT = (
-    "findex-crawler/0.6 (+https://github.com/student/findex; educational search engine lab)"
+    "findex-crawler/0.6 (+https://github.com/Evgeniy224/findex; educational search engine lab)"
 )
 
 RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +60,8 @@ async def fetch(
     backoff_cap: float = 8.0,
     jitter_max: float = 0.5,
     user_agent: str = DEFAULT_USER_AGENT,
+    redirect_allowed: Callable[[str], Awaitable[bool]] | None = None,
+    max_redirects: int = 20,
 ) -> FetchResult:
     """
     Виконує асинхронний HTTP GET із asyncio.timeout та повторами (до max_retries)
@@ -70,14 +75,74 @@ async def fetch(
 
     for attempt in range(1, max_retries + 1):
         retry_delay: float | None = None
+        request_url = url
+        visited_urls = {request_url}
 
         try:
-            async with asyncio.timeout(timeout):
-                response = await client.get(url, headers=headers, follow_redirects=True)
+            for _ in range(max_redirects + 1):
+                async with asyncio.timeout(timeout):
+                    response = await client.get(
+                        request_url,
+                        headers=headers,
+                        follow_redirects=False,
+                    )
 
-            last_status = response.status_code
-            last_final_url = str(response.url)
-            raw_bytes = response.content
+                last_status = response.status_code
+                last_final_url = str(response.url)
+                raw_bytes = response.content
+
+                if response.status_code not in REDIRECT_STATUS_CODES:
+                    break
+
+                location = response.headers.get("Location")
+                if not location:
+                    return FetchResult(
+                        url=url,
+                        final_url=last_final_url,
+                        status=response.status_code,
+                        text="",
+                        num_bytes=len(raw_bytes),
+                        elapsed=time.perf_counter() - t0,
+                        attempts=attempt,
+                        error="Redirect without Location header",
+                    )
+
+                next_url = urljoin(last_final_url, location)
+                if redirect_allowed is not None and not await redirect_allowed(next_url):
+                    return FetchResult(
+                        url=url,
+                        final_url=last_final_url,
+                        status=response.status_code,
+                        text="",
+                        num_bytes=len(raw_bytes),
+                        elapsed=time.perf_counter() - t0,
+                        attempts=attempt,
+                        error=f"Redirect blocked by crawl policy: {next_url}",
+                    )
+                if next_url in visited_urls:
+                    return FetchResult(
+                        url=url,
+                        final_url=last_final_url,
+                        status=response.status_code,
+                        text="",
+                        num_bytes=len(raw_bytes),
+                        elapsed=time.perf_counter() - t0,
+                        attempts=attempt,
+                        error="Redirect loop",
+                    )
+                visited_urls.add(next_url)
+                request_url = next_url
+            else:
+                return FetchResult(
+                    url=url,
+                    final_url=last_final_url,
+                    status=last_status,
+                    text="",
+                    num_bytes=0,
+                    elapsed=time.perf_counter() - t0,
+                    attempts=attempt,
+                    error=f"Too many redirects (maximum {max_redirects})",
+                )
 
             if 200 <= response.status_code < 300:
                 return FetchResult(
@@ -109,7 +174,7 @@ async def fetch(
                 if response.status_code == 429:
                     retry_after = parse_retry_after(response.headers.get("Retry-After"))
                     if retry_after is not None:
-                        retry_delay = min(backoff_cap, retry_after)
+                        retry_delay = retry_after
             else:
                 return FetchResult(
                     url=url,
@@ -125,17 +190,6 @@ async def fetch(
         except TimeoutError:
             last_status = 0
             last_error = f"Timeout after {timeout}s"
-        except httpx.TooManyRedirects:
-            return FetchResult(
-                url=url,
-                final_url=last_final_url,
-                status=0,
-                text="",
-                num_bytes=0,
-                elapsed=time.perf_counter() - t0,
-                attempts=attempt,
-                error="TooManyRedirects",
-            )
         except httpx.RequestError as exc:
             last_status = 0
             last_error = f"{type(exc).__name__}: {exc}"
@@ -145,7 +199,7 @@ async def fetch(
                 exp = min(backoff_cap, backoff_base * (2 ** (attempt - 1)))
                 jitter = random.uniform(0.0, jitter_max) if jitter_max > 0 else 0.0
                 retry_delay = exp + jitter
-            await asyncio.sleep(retry_delay)
+            await asyncio.sleep(float(retry_delay))
 
     return FetchResult(
         url=url,

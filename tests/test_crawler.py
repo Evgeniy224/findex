@@ -3,10 +3,11 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 
 from findex.corpus import iter_documents
-from findex.crawler.crawl import canonicalize_url, crawl
-from findex.crawler.fetch import fetch
+from findex.crawler.crawl import CrawlStats, canonicalize_url, crawl
+from findex.crawler.fetch import FetchResult, fetch
 from findex.crawler.robots import RobotsCache
 from findex.index import build_index
 
@@ -82,6 +83,63 @@ def test_fetch_does_not_retry_404() -> None:
     assert attempts == 1
 
 
+def test_fetch_honors_retry_after_without_truncating_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    sleeps: list[float] = []
+    attempts = 0
+
+    async def record_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(429, headers={"Retry-After": "12"})
+        return httpx.Response(200, text="ok")
+
+    async def _run() -> None:
+        monkeypatch.setattr(asyncio, "sleep", record_sleep)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            result = await fetch(
+                client,
+                "https://example.com/",
+                max_retries=2,
+                backoff_cap=1,
+                jitter_max=0,
+            )
+        assert result.status == 200
+
+    asyncio.run(_run())
+    assert sleeps == [12.0]
+
+
+def test_fetch_checks_redirect_policy_before_following() -> None:
+    requests: list[str] = []
+    checked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        return httpx.Response(302, headers={"Location": "https://outside.example/page"})
+
+    async def deny_redirect(url: str) -> bool:
+        checked.append(url)
+        return False
+
+    async def _run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            result = await fetch(
+                client,
+                "https://example.com/start",
+                redirect_allowed=deny_redirect,
+            )
+        assert result.status == 302
+        assert result.error == "Redirect blocked by crawl policy: https://outside.example/page"
+
+    asyncio.run(_run())
+    assert requests == ["https://example.com/start"]
+    assert checked == ["https://outside.example/page"]
+
+
 def test_fetch_retries_on_timeout_up_to_max_retries() -> None:
     attempts = 0
 
@@ -132,6 +190,31 @@ def test_robots_cache_per_host() -> None:
     assert robots_requests == 1
 
 
+@pytest.mark.parametrize("status", [401, 403, 408, 429, 503])
+def test_robots_cache_fails_closed_on_access_or_server_errors(status: int) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status)
+
+    async def _run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            cache = RobotsCache(client)
+            assert await cache.allowed("https://example.com/public") is False
+
+    asyncio.run(_run())
+
+
+def test_robots_cache_allows_when_file_is_missing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404)
+
+    async def _run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            cache = RobotsCache(client)
+            assert await cache.allowed("https://example.com/public") is True
+
+    asyncio.run(_run())
+
+
 def test_crawl_generator_deduplicates_obeys_robots_and_stops_at_max_pages(tmp_path: Path) -> None:
     pages_map: dict[str, str] = {
         "/robots.txt": "User-agent: *\nDisallow: /blocked\n",
@@ -166,6 +249,8 @@ def test_crawl_generator_deduplicates_obeys_robots_and_stops_at_max_pages(tmp_pa
             return httpx.Response(200, text=pages_map[path])
         return httpx.Response(404, text="Not Found")
 
+    stats = CrawlStats()
+
     async def _run() -> list[dict[str, str]]:
         transport = httpx.MockTransport(handler)
         collected: list[dict[str, str]] = []
@@ -176,6 +261,7 @@ def test_crawl_generator_deduplicates_obeys_robots_and_stops_at_max_pages(tmp_pa
             per_host=2,
             min_delay=0.0,
             transport=transport,
+            stats=stats,
         ):
             collected.append(
                 {
@@ -189,9 +275,12 @@ def test_crawl_generator_deduplicates_obeys_robots_and_stops_at_max_pages(tmp_pa
 
     pages = asyncio.run(_run())
     assert len(pages) == 3
+    assert stats.queue_depth == 0
+    assert stats.in_flight == 0
     assert all("/blocked" not in p["url"] for p in pages)
     assert all("other.org" not in p["url"] for p in pages)
     assert len(set(fetched_urls)) == len(fetched_urls)
+    assert len(fetched_urls) == 3
 
     jsonl_path = tmp_path / "crawled.jsonl"
     with jsonl_path.open("w", encoding="utf-8") as fh:
@@ -202,3 +291,92 @@ def test_crawl_generator_deduplicates_obeys_robots_and_stops_at_max_pages(tmp_pa
     assert len(docs) == 3
     idx = build_index(jsonl_path)
     assert idx.num_docs == 3
+
+
+def test_crawl_does_not_follow_cross_host_redirect() -> None:
+    requested: list[str] = []
+    records: list[FetchResult] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        requested.append(str(request.url))
+        if request.url.host == "docs.example.com":
+            return httpx.Response(
+                302,
+                headers={"Location": "https://external.example/page"},
+            )
+        return httpx.Response(200, text="<title>External</title>")
+
+    async def _run() -> list[str]:
+        found_urls: list[str] = []
+        async for page in crawl(
+            ["https://docs.example.com/"],
+            max_pages=1,
+            concurrency=1,
+            min_delay=0,
+            transport=httpx.MockTransport(handler),
+            log_records=records,
+        ):
+            found_urls.append(page.url)
+        return found_urls
+
+    found_urls = asyncio.run(_run())
+    assert found_urls == []
+    assert requested == ["https://docs.example.com/"]
+    assert len(records) == 1
+    assert records[0].error is not None
+    assert "Redirect blocked by crawl policy" in records[0].error
+
+
+def test_crawl_with_empty_domain_allowlist_fetches_nothing() -> None:
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(200, text="<title>should not fetch</title>")
+
+    async def _run() -> list[str]:
+        found_urls: list[str] = []
+        async for page in crawl(
+            ["https://docs.example.com/"],
+            max_pages=1,
+            allowed_domains=[],
+            transport=httpx.MockTransport(handler),
+        ):
+            found_urls.append(page.url)
+        return found_urls
+
+    assert asyncio.run(_run()) == []
+    assert requested == []
+
+
+def test_crawl_logs_404_once_and_continues() -> None:
+    requested: list[str] = []
+    records: list[FetchResult] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        requested.append(str(request.url))
+        return httpx.Response(404, text="Not Found")
+
+    async def _run() -> list[str]:
+        found_urls: list[str] = []
+        async for page in crawl(
+            ["https://docs.example.com/missing"],
+            max_pages=1,
+            concurrency=1,
+            min_delay=0,
+            transport=httpx.MockTransport(handler),
+            log_records=records,
+        ):
+            found_urls.append(page.url)
+        return found_urls
+
+    assert asyncio.run(_run()) == []
+    assert requested == ["https://docs.example.com/missing"]
+    assert len(records) == 1
+    assert records[0].status == 404
+    assert records[0].attempts == 1
+    assert records[0].error == "HTTP 404"

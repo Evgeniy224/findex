@@ -141,7 +141,7 @@ def extract_page_and_links(html: str, base_url: str) -> tuple[str, str, list[str
 
 def _is_domain_allowed(url: str, allowed_domains: set[str]) -> bool:
     if not allowed_domains:
-        return True
+        return False
     host = (urlsplit(url).hostname or "").lower()
     return any(host == dom or host.endswith(f".{dom}") for dom in allowed_domains)
 
@@ -193,6 +193,7 @@ async def crawl(
 
     out_queue: asyncio.Queue[Page | None] = asyncio.Queue()
     global_sem = asyncio.Semaphore(max(1, concurrency))
+    page_slots = asyncio.Semaphore(max_pages)
     host_sems: dict[str, asyncio.Semaphore] = {}
     host_locks: dict[str, asyncio.Lock] = {}
     last_host_req: dict[str, float] = {}
@@ -231,6 +232,7 @@ async def crawl(
 
                 crawl_stats.in_flight += 1
                 crawl_stats.queue_depth = frontier.qsize()
+                page_slot_reserved = False
                 try:
                     if stop_event.is_set():
                         return
@@ -257,11 +259,34 @@ async def crawl(
                         if stop_event.is_set():
                             return
                         await _respect_host_politeness(host)
+
+                        async def _redirect_is_allowed(
+                            target: str,
+                            source_url: str = url,
+                        ) -> bool:
+                            canonical_target = canonicalize_url(target)
+                            if canonical_target is None or not _is_domain_allowed(
+                                canonical_target, domains
+                            ):
+                                return False
+                            target_parts = urlsplit(canonical_target)
+                            target_host = (target_parts.hostname or "").lower()
+                            target_port = target_parts.port
+                            current_parts = urlsplit(source_url)
+                            current_host = (current_parts.hostname or "").lower()
+                            current_port = current_parts.port
+                            if target_host != current_host or target_port != current_port:
+                                return False
+                            return await robots.allowed(canonical_target)
+
+                        await page_slots.acquire()
+                        page_slot_reserved = True
                         res = await fetch(
                             client,
                             url,
                             timeout=timeout,
                             user_agent=user_agent,
+                            redirect_allowed=_redirect_is_allowed,
                         )
 
                     if log_records is not None:
@@ -269,6 +294,8 @@ async def crawl(
 
                     if res.error is not None or not (200 <= res.status < 300):
                         crawl_stats.errors += 1
+                        page_slots.release()
+                        page_slot_reserved = False
                         continue
 
                     title, clean_text, links = extract_page_and_links(
@@ -280,6 +307,7 @@ async def crawl(
                         return
 
                     pages_emitted += 1
+                    page_slot_reserved = False
                     crawl_stats.fetched = pages_emitted
 
                     page = Page(
@@ -305,6 +333,8 @@ async def crawl(
                     crawl_stats.queue_depth = frontier.qsize()
 
                 finally:
+                    if page_slot_reserved:
+                        page_slots.release()
                     crawl_stats.in_flight -= 1
                     frontier.task_done()
                     crawl_stats.queue_depth = frontier.qsize()
@@ -325,6 +355,14 @@ async def crawl(
             except asyncio.CancelledError:
                 pass
             finally:
+                while True:
+                    try:
+                        frontier.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                    else:
+                        frontier.task_done()
+                crawl_stats.queue_depth = 0
                 await out_queue.put(None)
 
         sup_task = asyncio.create_task(_supervisor())

@@ -57,11 +57,11 @@ class RobotsCache:
                 )
             if 200 <= resp.status_code < 300:
                 rp.parse(resp.text.splitlines())
-            elif resp.status_code in (401, 403):
+            elif resp.status_code in (401, 403, 408, 429) or resp.status_code >= 500:
                 rp.parse(["User-agent: *", "Disallow: /"])
             else:
                 rp.parse([])
         except (TimeoutError, httpx.RequestError):
-            rp.parse([])
+            rp.parse(["User-agent: *", "Disallow: /"])
 
         return rp
