@@ -68,9 +68,7 @@ def test_property_merge_matches_set_operations(left_ids: list[int], right_ids: l
     assert intersect_postings(left_postings, right_postings) == sorted(
         set(left_ids) & set(right_ids)
     )
-    assert union_postings(left_postings, right_postings) == sorted(
-        set(left_ids) | set(right_ids)
-    )
+    assert union_postings(left_postings, right_postings) == sorted(set(left_ids) | set(right_ids))
 
 
 @pytest.mark.slow

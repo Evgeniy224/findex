@@ -17,8 +17,7 @@ class SearchResult:
 class Scorer(Protocol):
     """Структурний протокол для алгоритмів ранжування."""
 
-    def score(self, index: Index, term: str, doc_id: int) -> float:
-        ...
+    def score(self, index: Index, term: str, doc_id: int) -> float: ...
 
 
 class TfIdf:

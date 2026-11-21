@@ -12,7 +12,6 @@ from findex.tokenize import tokenize
 logger = logging.getLogger(__name__)
 
 
-
 @dataclass
 class PostingPlain:
     doc_id: int

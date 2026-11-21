@@ -1,11 +1,18 @@
+import logging
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
+from typing import Literal
 
 from findex.corpus import Document, iter_documents
 from findex.tokenize import tokenize
+
+logger = logging.getLogger(__name__)
+
+ExecutorType = Literal["serial", "threads", "processes"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,11 +125,71 @@ def union_postings(left: list[Posting], right: list[Posting]) -> list[int]:
     return result
 
 
+def build_partial(paths: list[Path], start_doc_id: int = 0) -> Index:
+    """
+    Функція рівня модуля для воркерів (безпечна для pickle / spawn).
+    Читає переданий список шляхів та призначає їм doc_id починаючи з start_doc_id.
+    """
+    postings: defaultdict[str, list[Posting]] = defaultdict(list)
+    doc_meta: dict[int, DocMeta] = {}
+
+    for offset, path in enumerate(paths):
+        doc_id = start_doc_id + offset
+        text = path.read_text(encoding="utf-8", errors="replace")
+
+        doc_token_counts: defaultdict[str, int] = defaultdict(int)
+        doc_length = 0
+        for token in tokenize(text):
+            doc_token_counts[token] += 1
+            doc_length += 1
+
+        doc_meta[doc_id] = DocMeta(doc_id=doc_id, path=path, length=doc_length)
+        for term, tf in doc_token_counts.items():
+            postings[term].append(Posting(doc_id=doc_id, tf=tf))
+
+    sorted_postings: dict[str, list[Posting]] = {}
+    for term, plist in postings.items():
+        plist.sort(key=lambda p: p.doc_id)
+        sorted_postings[term] = plist
+
+    return Index(sorted_postings, doc_meta)
+
+
+def merge_indexes(partials: Iterable[Index]) -> Index:
+    """Об'єднує часткові індекси в один фінальний Index зі збереженням сортування постінгів."""
+    merged_postings: defaultdict[str, list[Posting]] = defaultdict(list)
+    merged_meta: dict[int, DocMeta] = {}
+
+    for partial in partials:
+        merged_meta.update(partial.doc_meta)
+        for term, plist in partial.postings.items():
+            merged_postings[term].extend(plist)
+
+    final_postings: dict[str, list[Posting]] = {}
+    for term, plist in merged_postings.items():
+        plist.sort(key=lambda p: p.doc_id)
+        final_postings[term] = plist
+
+    return Index(final_postings, merged_meta)
+
+
+def _split_chunks(paths: list[Path], num_chunks: int) -> list[tuple[int, list[Path]]]:
+    """Ділить список шляхів на num_chunks приблизно рівних шматків зі стартовим doc_id."""
+    if not paths:
+        return []
+    k = max(1, min(num_chunks, len(paths)))
+    chunk_size = (len(paths) + k - 1) // k
+    chunks: list[tuple[int, list[Path]]] = []
+    for start in range(0, len(paths), chunk_size):
+        chunks.append((start, paths[start : start + chunk_size]))
+    return chunks
+
+
 def build_index_from_docs(
     documents: Iterable[Document],
     on_doc: Callable[[Document], None] | None = None,
 ) -> Index:
-    """Будує об'єкт Index з довільного ітератора документів."""
+    """Будує об'єкт Index з довільного ітератора документів (послідовно)."""
     postings: defaultdict[str, list[Posting]] = defaultdict(list)
     doc_meta: dict[int, DocMeta] = {}
 
@@ -152,6 +219,44 @@ def build_index_from_docs(
 def build_index(
     root: Path,
     on_doc: Callable[[Document], None] | None = None,
+    executor: ExecutorType = "serial",
+    workers: int = 1,
+    on_chunk_done: Callable[[int], None] | None = None,
 ) -> Index:
-    """Будує інвертований індекс за один прохід по корпусу в директорії root."""
-    return build_index_from_docs(iter_documents(root), on_doc=on_doc)
+    """
+    Будує інвертований індекс по корпусу в директорії root.
+    Підтримує режими виконання: 'serial', 'threads', 'processes'.
+    """
+    if executor == "serial" and on_doc is not None:
+        return build_index_from_docs(iter_documents(root), on_doc=on_doc)
+
+    paths = sorted(root.rglob("*.txt"))
+    if not paths:
+        return Index({}, {})
+
+    chunks = _split_chunks(paths, workers if executor != "serial" else 1)
+
+    if executor == "serial":
+        partials: list[Index] = []
+        for start_id, chunk_paths in chunks:
+            partials.append(build_partial(chunk_paths, start_id))
+            if on_chunk_done is not None:
+                on_chunk_done(len(chunk_paths))
+        return merge_indexes(partials)
+
+    pool_cls = ThreadPoolExecutor if executor == "threads" else ProcessPoolExecutor
+    ordered_partials: list[Index | None] = [None] * len(chunks)
+
+    with pool_cls(max_workers=workers) as pool:
+        future_to_idx = {
+            pool.submit(build_partial, chunk_paths, start_id): (idx, len(chunk_paths))
+            for idx, (start_id, chunk_paths) in enumerate(chunks)
+        }
+        for future in as_completed(future_to_idx):
+            idx, chunk_len = future_to_idx[future]
+            # future.result() миттєво прокине виняток воркера зі стеком, якщо він впав
+            ordered_partials[idx] = future.result()
+            if on_chunk_done is not None:
+                on_chunk_done(chunk_len)
+
+    return merge_indexes([p for p in ordered_partials if p is not None])

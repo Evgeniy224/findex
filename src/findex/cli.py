@@ -9,7 +9,7 @@ from rich.logging import RichHandler
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
-from findex.index import build_index
+from findex.index import ExecutorType, build_index
 from findex.query_parser import QuerySyntaxError
 from findex.search import search
 from findex.stats import compute_stats
@@ -70,6 +70,18 @@ def cmd_index(
         Path,
         typer.Option("--out", "-o", help="Шлях до вихідного JSON-файлу індексу."),
     ] = Path("index.json"),
+    workers: Annotated[
+        int,
+        typer.Option("--workers", "-w", min=1, help="Кількість воркерів для індексації."),
+    ] = 1,
+    executor: Annotated[
+        ExecutorType,
+        typer.Option(
+            "--executor",
+            "-e",
+            help="Тип виконавця: serial, threads або processes.",
+        ),
+    ] = "serial",
 ) -> None:
     """Побудувати інвертований індекс із корпусу документів."""
     if not root.exists() or not root.is_dir():
@@ -85,8 +97,16 @@ def cmd_index(
         TaskProgressColumn(),
         console=stderr_console,
     ) as progress:
-        task = progress.add_task("Індексація документів...", total=total_files)
-        index_obj = build_index(root, on_doc=lambda _: progress.advance(task, 1))
+        task = progress.add_task(
+            f"Індексація ({executor}, workers={workers})...",
+            total=total_files,
+        )
+        index_obj = build_index(
+            root,
+            executor=executor,
+            workers=workers,
+            on_chunk_done=lambda count: progress.advance(task, count),
+        )
 
     save_index(index_obj, out)
     stderr_console.print(
@@ -136,9 +156,7 @@ def cmd_search(
                         "rank": rank,
                         "doc_id": res.doc_id,
                         "path": (
-                            str(meta.path)
-                            if (meta := index_obj.get_doc_meta(res.doc_id))
-                            else ""
+                            str(meta.path) if (meta := index_obj.get_doc_meta(res.doc_id)) else ""
                         ),
                         "score": round(res.score, 6),
                         "snippet": res.snippet,
