@@ -1,14 +1,20 @@
+import asyncio
 import json
 import logging
+import resource
+import sys
 from pathlib import Path
 from typing import Annotated, Literal
 
 import typer
 from rich.console import Console
+from rich.live import Live
 from rich.logging import RichHandler
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
+from findex.crawler.crawl import CrawlStats, crawl
+from findex.crawler.fetch import DEFAULT_USER_AGENT, FetchResult
 from findex.index import ExecutorType, build_index
 from findex.query_parser import QuerySyntaxError
 from findex.search import search
@@ -17,7 +23,7 @@ from findex.store import open_index, save_index
 
 app = typer.Typer(
     name="findex",
-    help="Пошукова система findex: індексація, статистика та ранжований пошук.",
+    help="Пошукова система findex: краулінг, індексація, статистика та ранжований пошук.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -47,6 +53,24 @@ def _fail(message: str, code: int = 1) -> typer.Exit:
     return typer.Exit(code=code)
 
 
+def _rss_mb() -> float:
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return rss / (1024 * 1024) if sys.platform == "darwin" else rss / 1024
+
+
+def _build_crawl_table(stats: CrawlStats, max_pages: int, out_path: Path) -> Table:
+    table = Table(title=f"findex crawl → {out_path}")
+    table.add_column("Метрика", style="cyan")
+    table.add_column("Значення", justify="right", style="bold green")
+    table.add_row("Зібрано сторінок", f"{stats.fetched} / {max_pages}")
+    table.add_row("Швидкість (pages/s)", f"{stats.pages_per_sec:.2f}")
+    table.add_row("Зараз у польоті (in-flight)", str(stats.in_flight))
+    table.add_row("Помилок", f"[red]{stats.errors}[/red]" if stats.errors else "0")
+    table.add_row("Глибина черги (frontier)", str(stats.queue_depth))
+    table.add_row("Час (s)", f"{stats.elapsed:.2f}")
+    return table
+
+
 @app.callback()
 def main(
     verbose: Annotated[
@@ -63,9 +87,112 @@ def main(
     _configure_logging(verbose)
 
 
+@app.command("crawl")
+def cmd_crawl(
+    seed_url: Annotated[str, typer.Argument(help="Початковий URL для обходу.")],
+    max_pages: Annotated[
+        int,
+        typer.Option("--max-pages", "-m", min=1, help="Максимальна кількість сторінок."),
+    ] = 200,
+    concurrency: Annotated[
+        int,
+        typer.Option("--concurrency", "-c", min=1, help="Кількість одночасних воркерів."),
+    ] = 10,
+    per_host: Annotated[
+        int,
+        typer.Option("--per-host", min=1, help="Максимум одночасних запитів на один хост."),
+    ] = 2,
+    min_delay: Annotated[
+        float,
+        typer.Option("--delay", min=0.0, help="Мінімальна пауза (с) між запитами на хост."),
+    ] = 0.2,
+    out: Annotated[
+        Path,
+        typer.Option("--out", "-o", help="Вихідний JSONL-файл зі сторінками."),
+    ] = Path("data/crawl.jsonl"),
+    log_file: Annotated[
+        Path,
+        typer.Option("--log", help="Файл журналу статусів по кожному URL."),
+    ] = Path("crawl.log"),
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Увімкнути asyncio debug mode для виявлення блокувань."),
+    ] = False,
+) -> None:
+    """Асинхронно обійти веб-сторінки та зберегти корпус у потоковий JSONL."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    stats = CrawlStats()
+    records: list[FetchResult] = []
+
+    async def _run_crawl() -> None:
+        with (
+            out.open("w", encoding="utf-8") as jsonl_fh,
+            log_file.open("w", encoding="utf-8") as log_fh,
+            Live(
+                _build_crawl_table(stats, max_pages, out),
+                console=stderr_console,
+                refresh_per_second=8,
+            ) as live,
+        ):
+            log_fh.write(f"# User-Agent: {DEFAULT_USER_AGENT}\n")
+            log_fh.write("status\tbytes\telapsed_s\tattempts\turl\terror\n")
+            flushed = 0
+
+            async for page in crawl(
+                [seed_url],
+                max_pages=max_pages,
+                concurrency=concurrency,
+                per_host=per_host,
+                min_delay=min_delay,
+                stats=stats,
+                log_records=records,
+            ):
+                line = json.dumps(
+                    {
+                        "url": page.url,
+                        "title": page.title,
+                        "text": page.text,
+                        "fetched_at": page.fetched_at,
+                    },
+                    ensure_ascii=False,
+                )
+                jsonl_fh.write(line + "\n")
+                jsonl_fh.flush()
+
+                while flushed < len(records):
+                    r = records[flushed]
+                    log_fh.write(
+                        f"{r.status}\t{r.num_bytes}\t{r.elapsed:.4f}\t"
+                        f"{r.attempts}\t{r.url}\t{r.error or '-'}\n"
+                    )
+                    flushed += 1
+                log_fh.flush()
+
+                live.update(_build_crawl_table(stats, max_pages, out))
+
+            while flushed < len(records):
+                r = records[flushed]
+                log_fh.write(
+                    f"{r.status}\t{r.num_bytes}\t{r.elapsed:.4f}\t"
+                    f"{r.attempts}\t{r.url}\t{r.error or '-'}\n"
+                )
+                flushed += 1
+            live.update(_build_crawl_table(stats, max_pages, out))
+
+    asyncio.run(_run_crawl(), debug=debug)
+
+    stderr_console.print(
+        f"[green]Завершено![/green] Сторінок: {stats.fetched}, час: {stats.elapsed:.2f}s "
+        f"({stats.pages_per_sec:.2f} pages/s), помилок: {stats.errors}, "
+        f"пік RSS: {_rss_mb():.1f} MB."
+    )
+
+
 @app.command("index")
 def cmd_index(
-    root: Annotated[Path, typer.Argument(help="Директорія з .txt документами.")],
+    root: Annotated[Path, typer.Argument(help="Директорія з .txt документами або .jsonl файл.")],
     out: Annotated[
         Path,
         typer.Option("--out", "-o", help="Шлях до вихідного JSON-файлу індексу."),
@@ -84,11 +211,14 @@ def cmd_index(
     ] = "serial",
 ) -> None:
     """Побудувати інвертований індекс із корпусу документів."""
-    if not root.exists() or not root.is_dir():
-        raise _fail(f"Директорію корпусу не знайдено: '{root}'")
+    if not root.exists():
+        raise _fail(f"Шлях корпусу не знайдено: '{root}'")
 
-    txt_files = list(root.rglob("*.txt"))
-    total_files = len(txt_files)
+    if root.is_file():
+        total_files: int | None = None
+    else:
+        txt_files = list(root.rglob("*.txt")) + list(root.rglob("*.jsonl"))
+        total_files = len(txt_files)
 
     with Progress(
         SpinnerColumn(),

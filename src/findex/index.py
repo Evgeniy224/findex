@@ -224,11 +224,20 @@ def build_index(
     on_chunk_done: Callable[[int], None] | None = None,
 ) -> Index:
     """
-    Будує інвертований індекс по корпусу в директорії root.
+    Будує інвертований індекс по корпусу в директорії root або окремому файлі (.jsonl/.txt).
     Підтримує режими виконання: 'serial', 'threads', 'processes'.
     """
-    if executor == "serial" and on_doc is not None:
-        return build_index_from_docs(iter_documents(root), on_doc=on_doc)
+    jsonl_files = list(root.rglob("*.jsonl")) if root.is_dir() else []
+    if root.is_file() or jsonl_files or (executor == "serial" and on_doc is not None):
+        wrapped_on_doc: Callable[[Document], None] | None = on_doc
+        if wrapped_on_doc is None and on_chunk_done is not None:
+            chunk_cb = on_chunk_done
+
+            def _notify_single_doc(_doc: Document) -> None:
+                chunk_cb(1)
+
+            wrapped_on_doc = _notify_single_doc
+        return build_index_from_docs(iter_documents(root), on_doc=wrapped_on_doc)
 
     paths = sorted(root.rglob("*.txt"))
     if not paths:
@@ -254,7 +263,6 @@ def build_index(
         }
         for future in as_completed(future_to_idx):
             idx, chunk_len = future_to_idx[future]
-            # future.result() миттєво прокине виняток воркера зі стеком, якщо він впав
             ordered_partials[idx] = future.result()
             if on_chunk_done is not None:
                 on_chunk_done(chunk_len)
