@@ -1,5 +1,7 @@
 # findex — Лабораторна 1
 
+> **Публічна демоверсія:** ще не розгорнута. Для локального запуску див. інструкцію Lab 7 нижче.
+
 ## Корпус
 Для тестування використовується папка `data/` з 3 тестовими текстовими файлами.
 
@@ -421,5 +423,147 @@ uv run findex crawl https://books.toscrape.com/ --max-pages 20 --concurrency 5 -
 uv run findex index /tmp/findex-lab6.jsonl --out /tmp/findex-lab6-index.json
 
 ![img_40.png](img_40.png)
+
+---
+
+# Лабораторна робота 7: HTTP API та вебінтерфейс
+
+## Запуск локально
+
+Задаємо шлях до побудованого JSON-індексу через оточення або `.env`:
+
+```sh
+uv run findex index data/ --out index.json
+export INDEX_PATH=index.json
+uv run findex serve --port 8000 --workers 1
+```
+
+Вебпошук: <http://localhost:8000/> · API: <http://localhost:8000/search?q=python> ·
+OpenAPI: <http://localhost:8000/docs> · health: <http://localhost:8000/health>.
+`GET /search` приймає `q`, `k` (1–100), `scorer` (`bm25` або `tfidf`) і `page`.
+Повні тексти документів доступні, якщо файли-джерела збережені за шляхами у метаданих індексу.
+
+## Docker і Render
+
+```sh
+cd /Users/user/Desktop/findex
+docker build -t findex .
+docker run --rm --name findex -p 8000:8000 \
+  -e INDEX_PATH=/app/index.json \
+  -v "$PWD/index.json:/app/index.json:ro" \
+  -v "$PWD/data:/app/data:ro" findex
+```
+
+Без змонтованих файлів Docker-образ шукає лише в невеликому англомовному демо-корпусі
+`deploy/corpus`; запитів на кшталт `Декоратори` там немає. Команда вище використовує локальний
+індекс і корпус із `data/`. Перебуваючи в корені репозиторію, спершу побудуйте індекс, якщо його
+ще немає або він застарілий: `uv run findex index data/ --out index.json`.
+`render.yaml` налаштовує Docker-сервіс і перевірку `/health`.
+
+Для власного індексу з іншим ім'ям змініть змонтований шлях та `INDEX_PATH`:
+
+```sh
+docker run --rm -p 8000:8000 \
+  -e INDEX_PATH=/app/custom-index.json \
+  -v "$PWD/index.json:/app/custom-index.json:ro" \
+  -v "$PWD/data:/app/data:ro" findex
+```
+
+Для публікації сервісу потрібен обліковий запис Render із доступом до GitHub-репозиторію. 
+
+## API тести
+
+```sh
+uv run pytest tests/test_web.py -q
+```
+
+## Навантажувальне тестування
+
+Локальний вимір виконано `oha 1.17.0` по 10 секунд на режим, із 50 паралельними з'єднаннями;
+`-w` дозволяє завершити запити, що залишились у польоті після дедлайну. Для чесного порівняння
+режимів пошуковий кеш вимкнений лише в benchmark-адаптері; production API залишає кеш увімкненим.
+Навантажувач і сервер запускалися на одній машині, тому результати характеризують це середовище.
+
+| Target | Route | Concurrency | RPS | p50 (ms) | p95 (ms) | p99 (ms) |
+|---|---|---:|---:|---:|---:|---:|
+| local, 1 worker, async def | `/search` | 50 | 93.0 | 531.24 | 549.14 | 762.36 |
+| local, 1 worker, def | `/search` | 50 | 49.9 | 887.14 | 1478.71 | 1557.84 |
+| local, 4 workers, def | `/search` | 50 | 162.9 | 312.93 | 465.37 | 520.37 |
+| deployed | `/search` | 20 | — | — | — | — |
+
+Production CPU-bound пошук реалізований як звичайний `def`: FastAPI виносить його з event loop у
+thread pool. У цьому навантаженні чотири процеси дали найбільшу пропускну здатність; кожен має окремий GIL і може виконувати Python-код на іншому ядрі, ціною копії індексу на процес. Один `def`-worker показав нижчу пропускну здатність через GIL і конкуренцію потоків; `async def` тут блокував event loop, але при послідовному CPU-коді уникнув конкуренції thread pool. Це не робить async варіант безпечним: він затримує інші запити, включно з health checks, доки обчислення не завершиться.
+
+Повторити замір: `uv run python scripts/benchmark_web.py --requests 500 --concurrency 50`.
+Після деплою передайте URL як `--url https://<service>.onrender.com`, щоб додати рядок зовнішнього
+сервісу (20 конкурентних клієнтів).
+
+Виміри `oha` повторюються benchmark-додатком, який навмисно відтворює обидва варіанти handler:
+
+```sh
+BENCHMARK_MODE=async INDEX_PATH="$PWD/index.json" uv run uvicorn findex.web.benchmark_app:app --port 8000 --workers 1
+# Окремий термінал:
+oha -z 10s -c 50 -w --no-tui --output-format json "http://localhost:8000/search?q=python&k=10"
+```
+
+Для інших рядків змінюємо `BENCHMARK_MODE=def` або додаємо `--workers 4`. `-w` чекає завершення
+активних запитів після 10 секунд, не зараховуючи їх як перервані.
+
+# Сервер -  http://localhost:8000
+
+# Відкрити пошук у браузері
+open 'http://localhost:8000/?q=Декоратори'
+
+![img_52.png](img_52.png)
+
+# Відкрити інтерактивну документацію API
+open http://localhost:8000/docs
+
+![img_53.png](img_53.png)
+
+# Перевірити стан сервісу та статистику індексу
+curl -i http://localhost:8000/health
+curl -sS http://localhost:8000/stats
+
+![img_54.png](img_54.png)
+
+# Пошук кириличного слова
+curl -sS -G --data-urlencode 'q=Декоратори' \
+  'http://localhost:8000/search'
+
+![img_55.png](img_55.png)
+
+# Пошук із пагінацією та BM25
+curl -sS -G \
+  --data-urlencode 'q=python' \
+  --data-urlencode 'k=5' \
+  --data-urlencode 'page=2' \
+  --data-urlencode 'scorer=bm25' \
+  'http://localhost:8000/search'
+
+![img_56.png](img_56.png)
+
+# Продемонструвати валідацію параметрів: очікується HTTP 422
+curl -i 'http://localhost:8000/search?q=python&k=abc'
+
+![img_57.png](img_57.png)
+
+
+# Тести та перевірки 
+
+![img_47.png](img_47.png)
+
+
+# Заміри продуктивності: запусти сервер у першому терміналі, а навантажувач — у другому. Для кожного режиму після заміру зупини сервер Ctrl+C і запусти його з наступними параметрами.
+
+![img_48.png](img_48.png)
+
+![img_49.png](img_49.png)
+
+![img_50.png](img_50.png)
+
+![img_51.png](img_51.png)
+
+
 
 

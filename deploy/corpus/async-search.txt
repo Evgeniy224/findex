@@ -1,0 +1,3 @@
+Asynchronous search services handle network waiting without blocking the event loop.
+CPU-heavy ranking still needs an execution strategy that does not starve other requests.
+This sample document describes Python async functions, await, and responsive APIs.

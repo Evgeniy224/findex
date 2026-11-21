@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated, Literal, TextIO
 
 import typer
+import uvicorn
 from rich.console import Console
 from rich.live import Live
 from rich.logging import RichHandler
@@ -20,6 +21,7 @@ from findex.query_parser import QuerySyntaxError
 from findex.search import search
 from findex.stats import compute_stats
 from findex.store import open_index, save_index
+from findex.web.settings import get_settings
 
 app = typer.Typer(
     name="findex",
@@ -374,6 +376,28 @@ def cmd_stats(
         for term, count in stats_data["top_terms"][:10]:
             top_table.add_row(term, str(count))
         stdout_console.print(top_table)
+
+
+@app.command("serve")
+def cmd_serve(
+    port: Annotated[
+        int | None,
+        typer.Option("--port", min=1, max=65535, help="Порт HTTP-сервера."),
+    ] = None,
+    workers: Annotated[
+        int,
+        typer.Option("--workers", min=1, help="Кількість worker-процесів Uvicorn."),
+    ] = 1,
+) -> None:
+    """Запустити HTTP API та вебінтерфейс."""
+    settings = get_settings()
+    uvicorn.run(
+        "findex.web:app",
+        host="0.0.0.0",
+        port=port or settings.port,
+        workers=workers,
+        log_level=settings.log_level.lower(),
+    )
 
 
 if __name__ == "__main__":

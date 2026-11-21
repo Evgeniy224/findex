@@ -1,0 +1,560 @@
+{
+  "postings": {
+    "asynchronous": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "search": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      },
+      {
+        "doc_id": 1,
+        "tf": 1
+      },
+      {
+        "doc_id": 2,
+        "tf": 3
+      }
+    ],
+    "services": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "handle": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "network": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "waiting": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "without": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "blocking": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "the": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      },
+      {
+        "doc_id": 1,
+        "tf": 2
+      },
+      {
+        "doc_id": 2,
+        "tf": 2
+      }
+    ],
+    "event": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "loop": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "cpu-heavy": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "ranking": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      },
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "still": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "needs": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "an": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      },
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "execution": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "strategy": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "that": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      },
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "does": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "not": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "starve": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "other": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "requests": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "this": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "sample": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "document": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "describes": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "python": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      },
+      {
+        "doc_id": 2,
+        "tf": 2
+      }
+    ],
+    "async": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "functions": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "await": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "and": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      },
+      {
+        "doc_id": 1,
+        "tf": 2
+      },
+      {
+        "doc_id": 2,
+        "tf": 3
+      }
+    ],
+    "responsive": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "apis": [
+      {
+        "doc_id": 0,
+        "tf": 1
+      }
+    ],
+    "inverted": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "index": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "maps": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "each": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "term": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "to": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      },
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "documents": [
+      {
+        "doc_id": 1,
+        "tf": 2
+      },
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "contain": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "it": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "findex": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      },
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "ranks": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "matching": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "with": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "bm25": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "or": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "tf-idf": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "returns": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "useful": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "snippets": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "api": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      },
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "validates": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "query": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "parameters": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "offers": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "paginated": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "json": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "results": [
+      {
+        "doc_id": 1,
+        "tf": 1
+      }
+    ],
+    "combines": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "tokenization": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "boolean": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "queries": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "ranked": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "retrieval": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "web": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "application": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "provides": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "a": [
+      {
+        "doc_id": 2,
+        "tf": 2
+      }
+    ],
+    "small": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "page": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "documented": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "http": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "use": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "endpoint": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "find": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "about": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ],
+    "indexing": [
+      {
+        "doc_id": 2,
+        "tf": 1
+      }
+    ]
+  },
+  "doc_meta": {
+    "0": {
+      "path": "deploy/corpus/async-search.txt",
+      "length": 35
+    },
+    "1": {
+      "path": "deploy/corpus/inverted-index.txt",
+      "length": 35
+    },
+    "2": {
+      "path": "deploy/corpus/python-search.txt",
+      "length": 35
+    }
+  }
+}

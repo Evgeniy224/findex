@@ -1,0 +1,3 @@
+Python search combines tokenization, boolean queries, and ranked retrieval.
+The findex web application provides a small search page and a documented HTTP API.
+Use the search endpoint to find documents about Python, indexing, and ranking.

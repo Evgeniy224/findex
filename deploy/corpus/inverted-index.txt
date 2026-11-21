@@ -1,0 +1,3 @@
+An inverted index maps each term to the documents that contain it.
+Findex ranks matching documents with BM25 or TF-IDF and returns useful search snippets.
+The API validates query parameters and offers paginated JSON results.

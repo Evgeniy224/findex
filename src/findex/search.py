@@ -38,11 +38,12 @@ def search(
     scorer_name: ScorerName = "tfidf",
     engine: EngineType = "set",
     top_k: int = 10,
+    use_cache: bool = True,
 ) -> list[SearchResult]:
     """Пошук по індексу з підтримкою булевої логіки, вибору рушія та скорера."""
     cache_key = (id(index), query, scorer_name, engine, top_k)
 
-    if cache_key in _search_cache:
+    if use_cache and cache_key in _search_cache:
         logger.debug("Cache hit для запиту '%s'", query)
         return _search_cache[cache_key]
 
@@ -66,7 +67,8 @@ def search(
         snippet = generate_snippet(index, res.doc_id, terms)
         final_results.append(SearchResult(score=res.score, doc_id=res.doc_id, snippet=snippet))
 
-    _search_cache[cache_key] = final_results
+    if use_cache:
+        _search_cache[cache_key] = final_results
     return final_results
 
 

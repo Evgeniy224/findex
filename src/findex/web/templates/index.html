@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>findex — пошук</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <header class="site-header">
+      <a class="brand" href="/">findex<span>.</span></a>
+      <a class="api-link" href="/docs">API docs</a>
+    </header>
+    <section class="intro">
+      <p class="eyebrow">Лабораторна робота 7</p>
+      <h1>Знайдіть потрібне.</h1>
+      <p class="subtitle">Пошук по локально проіндексованому корпусу документів.</p>
+    </section>
+    <form class="search-form" action="/" method="get">
+      <label class="sr-only" for="q">Пошуковий запит</label>
+      <input id="q" name="q" value="{{ q }}" placeholder="Наприклад: python AND async" maxlength="200" required>
+      <select name="scorer" aria-label="Алгоритм ранжування">
+        <option value="bm25" {% if scorer == 'bm25' %}selected{% endif %}>BM25</option>
+        <option value="tfidf" {% if scorer == 'tfidf' %}selected{% endif %}>TF-IDF</option>
+      </select>
+      <input type="hidden" name="k" value="{{ k }}">
+      <button type="submit">Шукати</button>
+    </form>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    {% if q and not error %}
+      <p class="result-count">{{ total }} результатів для <strong>{{ q }}</strong></p>
+      <section id="results" aria-label="Результати пошуку">
+        {% for result in results %}
+          <article class="result">
+            <h2><a href="/doc/{{ result.doc_id }}">{{ result.title }}</a></h2>
+            <p class="snippet">{% for text, highlighted in result.parts %}{% if highlighted %}<mark>{{ text }}</mark>{% else %}{{ text }}{% endif %}{% endfor %}</p>
+            <p class="score">Оцінка {{ "%.4f"|format(result.score) }} · <a href="/docs/{{ result.doc_id }}">JSON документа</a></p>
+          </article>
+        {% else %}
+          <p class="empty">Нічого не знайдено. Спробуйте змінити запит.</p>
+        {% endfor %}
+      </section>
+      {% if pages > 1 %}
+        <nav class="pagination" aria-label="Пагінація">
+          {% if page > 1 %}<a href="/?q={{ q|urlencode }}&k={{ k }}&scorer={{ scorer }}&page={{ page - 1 }}">← Попередня</a>{% endif %}
+          <span>Сторінка {{ page }} з {{ pages }}</span>
+          {% if page < pages %}<a href="/?q={{ q|urlencode }}&k={{ k }}&scorer={{ scorer }}&page={{ page + 1 }}">Наступна →</a>{% endif %}
+        </nav>
+      {% endif %}
+    {% endif %}
+    <footer><span>findex · інвертований індекс і ранжований пошук</span><a href="/health">health</a></footer>
+  </main>
+</body>
+</html>

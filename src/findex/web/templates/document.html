@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ document.title }} — findex</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <header class="site-header">
+      <a class="brand" href="/">findex<span>.</span></a>
+      <a class="api-link" href="/docs">API docs</a>
+    </header>
+    <article class="document">
+      <a class="back-link" href="/">← До пошуку</a>
+      <p class="eyebrow">Документ {{ document.doc_id }}</p>
+      <h1>{{ document.title }}</h1>
+      <p class="document-path">{{ document.path }}</p>
+      <pre>{{ document.text }}</pre>
+    </article>
+  </main>
+</body>
+</html>
