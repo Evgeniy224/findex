@@ -514,12 +514,12 @@ oha -z 10s -c 50 -w --no-tui --output-format json "http://localhost:8000/search?
 # Відкрити пошук у браузері
 open 'http://localhost:8000/?q=Декоратори'
 
-![img_52.png](img_52.png)
+![img_41.png](img_41.png)
 
 # Відкрити інтерактивну документацію API
 open http://localhost:8000/docs
 
-![img_53.png](img_53.png)
+![img_42.png](img_42.png)
 
 # Перевірити стан сервісу та статистику індексу
 curl -i http://localhost:8000/health
