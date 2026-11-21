@@ -1,0 +1,13 @@
+# User-Agent: findex-crawler/0.6 (+https://github.com/student/findex; educational search engine lab)
+status	bytes	elapsed_s	attempts	url	error
+200	51294	0.4202	1	https://books.toscrape.com/	-
+200	51294	0.1469	1	https://books.toscrape.com/index.html	-
+200	51455	0.1550	1	https://books.toscrape.com/catalogue/category/books/sequential-art_5/index.html	-
+200	47874	0.1437	1	https://books.toscrape.com/catalogue/category/books/classics_6/index.html	-
+200	37032	0.1415	1	https://books.toscrape.com/catalogue/category/books/philosophy_7/index.html	-
+200	37009	0.5705	1	https://books.toscrape.com/catalogue/category/books/travel_2/index.html	-
+200	50607	0.7139	1	https://books.toscrape.com/catalogue/category/books_1/index.html	-
+200	50397	0.1446	1	https://books.toscrape.com/catalogue/category/books/romance_8/index.html	-
+200	45308	0.1515	1	https://books.toscrape.com/catalogue/category/books/womens-fiction_9/index.html	-
+200	50388	0.7329	1	https://books.toscrape.com/catalogue/category/books/mystery_3/index.html	-
+200	50109	0.7176	1	https://books.toscrape.com/catalogue/category/books/historical-fiction_4/index.html	-

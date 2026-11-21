@@ -1,0 +1,3 @@
+# User-Agent: findex-crawler/0.6 (+https://github.com/student/findex; educational search engine lab)
+status	bytes	elapsed_s	attempts	url	error
+404	153	0.1483	1	https://books.toscrape.com/non-existent-page-404	HTTP 404
