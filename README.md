@@ -738,4 +738,4 @@ Semantic:
 
 ![img_59.png](img_59.png)
 
-![2026-11-2301.34.54-ezgif.com-video-to-gif-converter.gif](../2026-11-2301.34.54-ezgif.com-video-to-gif-converter.gif)
+![2026-11-2301.34.54-ezgif.com-video-to-gif-converter.gif](2026-11-2301.34.54-ezgif.com-video-to-gif-converter.gif)
