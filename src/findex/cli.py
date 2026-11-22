@@ -282,6 +282,14 @@ def cmd_search(
         bool,
         typer.Option("--json", help="Вивести результати у форматі JSON у stdout."),
     ] = False,
+    mode: Annotated[
+        Literal["keyword", "semantic", "hybrid"],
+        typer.Option("--mode", "-m", help="Режим пошуку: keyword, semantic або hybrid."),
+    ] = "keyword",
+    embeddings_model: Annotated[
+        str,
+        typer.Option("--embeddings-model", help="Назва sentence-transformers моделі."),
+    ] = "all-MiniLM-L6-v2",
 ) -> None:
     """Виконати пошуковий запит за побудованим індексом."""
     if not index_file.exists() or not index_file.is_file():
@@ -295,6 +303,9 @@ def cmd_search(
                 scorer_name=scorer,
                 engine=engine,
                 top_k=top_k,
+                mode=mode,
+                index_path=index_file,
+                embeddings_model=embeddings_model,
             )
 
             if as_json:
@@ -376,6 +387,31 @@ def cmd_stats(
         for term, count in stats_data["top_terms"][:10]:
             top_table.add_row(term, str(count))
         stdout_console.print(top_table)
+
+
+@app.command("embed")
+def cmd_embed(
+    index_file: Annotated[Path, typer.Argument(help="Шлях до JSON-файлу індексу.")],
+    model: Annotated[
+        str,
+        typer.Option("--model", "-m", help="Назва sentence-transformers моделі."),
+    ] = "all-MiniLM-L6-v2",
+) -> None:
+    """Створити локальний семантичний ембединг-індекс документів."""
+    if not index_file.exists() or not index_file.is_file():
+        raise _fail(f"Файл індексу не знайдено: '{index_file}'")
+    try:
+        with open_index(index_file) as index_obj:
+            from findex.embeddings import build_embeddings, embedding_paths
+
+            chunk_count, dimensions = build_embeddings(index_obj, index_file, model)
+            vectors_path, chunks_path = embedding_paths(index_file)
+        stderr_console.print(
+            f"[green]Готово![/green] Чанків: {chunk_count}, вимірність: {dimensions}. "
+            f"Збережено у '{vectors_path}' та '{chunks_path}'."
+        )
+    except (OSError, ValueError) as exc:
+        raise _fail(str(exc)) from None
 
 
 @app.command("serve")

@@ -10,7 +10,7 @@ from findex.query_parser import (
     Term,
     parse_query,
 )
-from findex.ranking import BM25, TfIdf
+from findex.ranking import BM25, SearchResult, TfIdf, score_terms_numpy
 from findex.search import clear_search_cache, search
 
 
@@ -76,3 +76,32 @@ def test_search_engines_consistency_and_cache(sample_index: Index) -> None:
     # Повторний виклик із кешу повертає ідентичний результат
     res_cached = search(sample_index, "python AND async", scorer_name="bm25", engine="set")
     assert res_cached == res_set
+
+
+@pytest.mark.parametrize("scorer_name", ["tfidf", "bm25"])
+def test_numpy_search_matches_lab3_scorer(
+    sample_index: Index,
+    scorer_name: str,
+) -> None:
+    """Vectorized ranking must preserve exact Lab 3 scores and ordering."""
+    clear_search_cache()
+    terms = ["python", "async"]
+    matched = sample_index.all_doc_ids()
+
+    old_scorer = BM25() if scorer_name == "bm25" else TfIdf()
+    old_results: list[SearchResult] = []
+    for doc_id in matched:
+        old_results.append(
+            SearchResult(
+                score=sum(old_scorer.score(sample_index, term, doc_id) for term in terms),
+                doc_id=doc_id,
+            )
+        )
+    old_results = sorted(old_results, key=lambda r: (-r.score, -r.doc_id))[:10]
+    new_results = score_terms_numpy(sample_index, terms, matched, scorer_name, 10)
+
+    assert [r.doc_id for r in new_results] == [r.doc_id for r in old_results]
+    assert all(
+        abs(r.score - old.score) < 1e-12
+        for r, old in zip(new_results, old_results, strict=True)
+    )

@@ -24,6 +24,11 @@
         <option value="bm25" {% if scorer == 'bm25' %}selected{% endif %}>BM25</option>
         <option value="tfidf" {% if scorer == 'tfidf' %}selected{% endif %}>TF-IDF</option>
       </select>
+      <select name="mode" aria-label="Режим пошуку">
+        <option value="keyword" {% if mode == 'keyword' %}selected{% endif %}>Keyword</option>
+        <option value="semantic" {% if mode == 'semantic' %}selected{% endif %}>Semantic</option>
+        <option value="hybrid" {% if mode == 'hybrid' %}selected{% endif %}>Hybrid</option>
+      </select>
       <input type="hidden" name="k" value="{{ k }}">
       <button type="submit">Шукати</button>
     </form>
@@ -43,9 +48,9 @@
       </section>
       {% if pages > 1 %}
         <nav class="pagination" aria-label="Пагінація">
-          {% if page > 1 %}<a href="/?q={{ q|urlencode }}&k={{ k }}&scorer={{ scorer }}&page={{ page - 1 }}">← Попередня</a>{% endif %}
+          {% if page > 1 %}<a href="/?q={{ q|urlencode }}&k={{ k }}&scorer={{ scorer }}&mode={{ mode }}&page={{ page - 1 }}">← Попередня</a>{% endif %}
           <span>Сторінка {{ page }} з {{ pages }}</span>
-          {% if page < pages %}<a href="/?q={{ q|urlencode }}&k={{ k }}&scorer={{ scorer }}&page={{ page + 1 }}">Наступна →</a>{% endif %}
+          {% if page < pages %}<a href="/?q={{ q|urlencode }}&k={{ k }}&scorer={{ scorer }}&mode={{ mode }}&page={{ page + 1 }}">Наступна →</a>{% endif %}
         </nav>
       {% endif %}
     {% endif %}

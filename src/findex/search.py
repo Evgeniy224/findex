@@ -1,17 +1,22 @@
-import heapq
 import logging
+from pathlib import Path
 from typing import Literal
 
 from findex.decorators import timed
 from findex.index import Index
-from findex.query_parser import EngineType, Node, parse_query
-from findex.ranking import BM25, Scorer, SearchResult, TfIdf
+from findex.query_parser import EngineType, Node, QuerySyntaxError, parse_query
+from findex.ranking import SearchResult, score_terms_numpy
+from findex.tokenize import tokenize
 
 logger = logging.getLogger(__name__)
 
 ScorerName = Literal["tfidf", "bm25"]
+SearchMode = Literal["keyword", "semantic", "hybrid"]
 
-_search_cache: dict[tuple[int, str, ScorerName, EngineType, int], list[SearchResult]] = {}
+_search_cache: dict[
+    tuple[int, str, ScorerName, EngineType, SearchMode, int],
+    list[SearchResult],
+] = {}
 
 
 def clear_search_cache() -> None:
@@ -39,28 +44,64 @@ def search(
     engine: EngineType = "set",
     top_k: int = 10,
     use_cache: bool = True,
+    mode: SearchMode = "keyword",
+    index_path: Path | None = None,
+    embeddings_model: str = "all-MiniLM-L6-v2",
 ) -> list[SearchResult]:
     """Пошук по індексу з підтримкою булевої логіки, вибору рушія та скорера."""
-    cache_key = (id(index), query, scorer_name, engine, top_k)
+    cache_key = (id(index), query, scorer_name, engine, mode, top_k)
 
     if use_cache and cache_key in _search_cache:
         logger.debug("Cache hit для запиту '%s'", query)
         return _search_cache[cache_key]
 
-    ast = parse_query(query)
-    matched_docs = ast.evaluate(index, engine=engine)
+    terms = list(tokenize(query))
+    matched_docs: set[int]
+    if mode == "keyword":
+        ast = parse_query(query)
+        matched_docs = ast.evaluate(index, engine=engine)
+        terms = _extract_terms(ast)
+    else:
+        try:
+            ast = parse_query(query)
+            matched_docs = ast.evaluate(index, engine=engine)
+            terms = _extract_terms(ast)
+        except QuerySyntaxError:
+            matched_docs = set()
+            for term in terms:
+                matched_docs.update(posting.doc_id for posting in index.postings.get(term, []))
+
+    if mode != "keyword" and index_path is not None:
+        from findex.embeddings import reciprocal_rank_fusion, semantic_search
+
+        semantic = semantic_search(
+            index_path,
+            query,
+            top_k,
+            model_name=embeddings_model,
+        )
+        if mode == "semantic":
+            top_results = semantic
+        else:
+            keyword = (
+                score_terms_numpy(index, terms, matched_docs, scorer_name, top_k)
+                if matched_docs
+                else []
+            )
+            top_results = reciprocal_rank_fusion([keyword, semantic], top_k)
+    else:
+        top_results = score_terms_numpy(
+            index,
+            terms,
+            matched_docs,
+            scorer_name,
+            top_k,
+        )
+
     if not matched_docs:
-        return []
-
-    terms = _extract_terms(ast)
-    scorer: Scorer = BM25() if scorer_name == "bm25" else TfIdf()
-
-    scored_results: list[SearchResult] = []
-    for doc_id in matched_docs:
-        total_score = sum(scorer.score(index, term, doc_id) for term in terms)
-        scored_results.append(SearchResult(score=total_score, doc_id=doc_id))
-
-    top_results = heapq.nlargest(top_k, scored_results)
+        if mode == "keyword":
+            return []
+        terms = []
 
     final_results: list[SearchResult] = []
     for res in top_results:

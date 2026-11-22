@@ -565,5 +565,177 @@ curl -i 'http://localhost:8000/search?q=python&k=abc'
 ![img_51.png](img_51.png)
 
 
+---
 
+# Лабораторна робота 8: NumPy-прискорення, семантика та гібридний пошук
 
+## Що було зроблено
+
+- Додано NumPy-представлення постингів і довжин документів.
+- BM25 і TF-IDF тепер накопичують оцінки масивними виразами NumPy, а top-k знаходиться через
+  `np.argpartition`.
+- Додано semantичний пошук на `sentence-transformers/all-MiniLM-L6-v2`, нормалізацію до unit
+  vector та cosine search через `E @ q`.
+- Додано Reciprocal Rank Fusion (RRF, `k=60`) для режиму `hybrid`.
+- CLI підтримує `keyword`, `semantic` і `hybrid`; режими доступні в `/search` API та вебформі.
+- Додано pytest-бенчмарки пошуку й побудови індексу та тест еквівалентності нових і класичних
+  реалізацій.
+
+## Профілювання та гарячі точки
+
+Профілі збережено в `docs/findex-search.prof` і `docs/findex-index.prof`.
+
+| № | Профільована точка | Тип часу | Гіпотеза до зміни | Результат |
+|---|---|---|---|---|
+| 1 | Ранжування документів у `BM25.score()` / `TfIdf.score()` | Python: пошук TF у списку постингів і 1 виклик скорера на документ | Витрати дублюються для кожного терміна й кожного документа | Замінено масивним накопиченням у `ranking.score_terms_numpy()` |
+| 2 | Підсумовування окремих score у циклі пошуку | Python | Ранги не можуть бути агрегованими C-циклами | Замінено NumPy ufunc/scatter-add |
+| 3 | Відбір top-k через повний цикл сортування | Python | Повне сортування дорогше, ніж частковий відбір | Додано `np.argpartition`, з урахуванням рівних score |
+
+Профайлінг `py-spy` для macOS не вдалося записати без elevated privilege під поточним користувачем; замість нього зафіксовано deterministic cProfile профілі пошуку й індексації. cProfile показав, що  найбільшу абсолютну частину попереднього запуску займала сама індексація/CLI-завантаження модулів,
+а локальні NumPy виклики скоринга були близько 2 ms cumulative в пошуковому профілі.
+
+## Benchmark BM25: Python-loop проти NumPy
+
+Медіана 30 повторів на корпусі `index.json`, прогрів перед замірами:
+
+| Запит | Docs matched | Lab 3 scorer (ms) | NumPy scorer (ms) | Speedup |
+|---|---:|---:|---:|---:|
+| `python` | 359 | 1.293 | 0.052 | 24.94× |
+| `bm25` | 219 | 0.553 | 0.040 | 13.68× |
+| `python AND async` | 231 | 1.484 | 0.073 | 20.23× |
+
+Прискорення стабільне для списків із сотнями postings. Для дуже коротких списків NumPy може
+програти через накладні витрати створення масивів і виклик kernel; тому candidate filtering і частковий top-k залишаються правильним компромісом для невеликих запитів.
+
+Повторити pytest бенчмарки:
+
+```sh
+uv run pytest tests/test_benchmarks_lab8.py --benchmark-only -q
+uv run pytest tests/test_parser_and_ranking.py -k numpy_search_matches_lab3_scorer -q
+```
+
+## Семантичний та гібридний пошук
+
+Побудова ембедингів:
+
+```sh
+uv run findex index data/ --out index.json
+uv run findex embed index.json --model all-MiniLM-L6-v2
+uv run findex search index.json "how do I make Python faster" --mode semantic --top-k 10
+uv run findex search index.json "how do I make Python faster" --mode hybrid --top-k 10
+```
+
+Файли: `index.embeddings.npy` — float32-вектори розмірності 384, `index.chunks.json` — відповідність чанків документам. Семантичний пошук нормалізує query і обчислює матрично-векторний добуток, потім  вибирає найкращий чанк кожного документа. Гібридний пошук об'єднує keyword і semantic результати RRF.
+
+Smoke-тест на двох документах коректно повернув документ про Python performance optimization на першому місці для запиту `how do I make Python faster`. API:
+
+```text
+GET /search?q=python&mode=keyword
+GET /search?q=python&mode=semantic
+GET /search?q=python&mode=hybrid
+```
+
+### Evaluation plan: keyword / semantic / hybrid
+
+Precision@5 вимірюється вручну за формулою `P@5 = кількість релевантних документів серед top-5 / 5`.
+Для кожного запиту й режиму один документ позначається `1` (релевантний) або `0` (нерелевантний).
+У середній P@5 усереднюються оцінки всіх запитів кожної групи.
+
+Набір із 15 запитів збережено в `data/evaluation_queries.json`:
+
+| № | Оригінальний запит Lab 3 | № | Paraphrase |
+|---:|---|---:|---|
+| 1 | `пошукова система` | 1 | `як прискорити виконання Python коду` |
+| 2 | `інвертований індекс` | 2 | `який алгоритм ранжує документи за релевантністю` |
+| 3 | `BM25` | 3 | `як організувати неблокуючі мережеві запити` |
+| 4 | `TF-IDF` | 4 | `як зберігати та знаходити пари ключ значення` |
+| 5 | `python async await` | 5 | `як ввічливо обійти багато вебсторінок` |
+| 6 | `event loop` | — | — |
+| 7 | `декоратори Python` | — | — |
+| 8 | `структури даних` | — | — |
+| 9 | `краулер robots.txt` | — | — |
+| 10 | `numpy прискорення` | — | — |
+
+Автоматично отримати 5 найкращих документів для кожного режиму:
+
+```sh
+uv run findex embed index.json --model all-MiniLM-L6-v2
+uv run python scripts/evaluate_search.py
+```
+
+Результат: [`docs/search-evaluation.csv`](docs/search-evaluation.csv). Для кожного рядка заповніть
+останню колонку `relevant`: `1`, якщо документ відповідає темі запиту, інакше `0`. Після розмітки
+скопіюйте файл під іншу назву і перерахуйте таблицю:
+
+```sh
+cp docs/search-evaluation.csv docs/search-evaluation-labeled.csv
+# Відкрити CSV та позначити колонку relevant значеннями 0/1
+uv run python scripts/evaluate_search.py --labels docs/search-evaluation-labeled.csv
+```
+
+Середня P@5 після ручної розмітки має з'явитися у такій таблиці:
+
+| Тип запиту | Запитів | Keyword P@5 | Semantic P@5 | Hybrid P@5 |
+|---|---:|---:|---:|---:|
+| Оригінальні запити Lab 3 | 10 | заповнити після розмітки | заповнити після розмітки | заповнити після розмітки |
+| Paraphrases | 5 | заповнити після розмітки | заповнити після розмітки | заповнити після розмітки |
+
+Запустити semantic/hybrid smoke-тест без зовнішнього API можна через тест-файл і локальну модель:
+
+```sh
+uv run findex embed index.json
+uv run findex search index.json "how do I make Python faster" --mode semantic --json
+uv run findex search index.json "how do I make Python faster" --mode hybrid --json
+```
+
+## Архітектура Лабораторної 8
+
+```mermaid
+flowchart LR
+  Corpus[Corpus / crawler] --> Indexer[Index + postings]
+  Indexer --> Keyword[NumPy BM25 / TF-IDF]
+  Indexer --> Chunks[Document chunks]
+  Chunks --> Encoder[Sentence Transformer]
+  Encoder --> Vectors[Float32 vectors]
+  Keyword --> RRF[RRF fusion]
+  Vectors --> Semantic[Cosine / E @ q]
+  Semantic --> RRF
+  RRF --> API[CLI / API / UI]
+```
+
+## Запуск і перевірки
+
+```sh
+uv run pytest -q
+uv run ruff check src tests
+uv run pyright
+uv run python -m cProfile -o docs/findex-search.prof -m findex search index.json "python AND async"
+uv run python -m cProfile -o docs/findex-index.prof -m findex index data --out index.json
+```
+
+# Додати файли embeddings для Render
+cd /Users/user/Desktop/findex
+uv run findex embed deploy/index.json --model all-MiniLM-L6-v2
+
+![img_44.png](img_44.png)
+
+![img_43.png](img_43.png)
+
+#  CLI і benchmark
+Keyword:
+
+![img_45.png](img_45.png)
+
+Semantic:
+
+![img_46.png](img_46.png)
+
+Бенчмарки:
+
+![img_58.png](img_58.png)
+
+Профілі:
+
+![img_59.png](img_59.png)
+
+![2026-11-2301.34.54-ezgif.com-video-to-gif-converter.gif](../2026-11-2301.34.54-ezgif.com-video-to-gif-converter.gif)

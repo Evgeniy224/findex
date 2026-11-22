@@ -84,7 +84,7 @@ def create_app(index_loader: Callable[[Path], Index] = load_index) -> FastAPI:
     application = FastAPI(
         title="findex API",
         description="HTTP API and web interface for the findex search engine.",
-        version="0.7.0",
+        version="1.0.0",
         lifespan=lifespan,
     )
     application.mount(
@@ -121,6 +121,7 @@ def create_app(index_loader: Callable[[Path], Index] = load_index) -> FastAPI:
         k: Annotated[int, Query(ge=1, le=100)] = 10,
         scorer: Literal["bm25", "tfidf"] = "bm25",
         page: Annotated[int, Query(ge=1)] = 1,
+        mode: Literal["keyword", "semantic", "hybrid"] = "keyword",
     ) -> SearchResponse:
         if index is None:
             raise HTTPException(status_code=503, detail="Search index is not loaded")
@@ -131,6 +132,8 @@ def create_app(index_loader: Callable[[Path], Index] = load_index) -> FastAPI:
                 query=q,
                 scorer_name=scorer,
                 top_k=index.num_docs,
+                mode=mode,
+                index_path=get_settings().index_path,
             )
         except QuerySyntaxError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -199,6 +202,7 @@ def create_app(index_loader: Callable[[Path], Index] = load_index) -> FastAPI:
         k: Annotated[int, Query(ge=1, le=100)] = 10,
         page: Annotated[int, Query(ge=1)] = 1,
         scorer: Literal["bm25", "tfidf"] = "bm25",
+        mode: Literal["keyword", "semantic", "hybrid"] = "keyword",
     ):
         results: list[dict[str, object]] = []
         total = 0
@@ -206,7 +210,14 @@ def create_app(index_loader: Callable[[Path], Index] = load_index) -> FastAPI:
         error = None
         if q and index is not None:
             try:
-                all_results = search(index, q, scorer_name=scorer, top_k=index.num_docs)
+                all_results = search(
+                    index,
+                    q,
+                    scorer_name=scorer,
+                    top_k=index.num_docs,
+                    mode=mode,
+                    index_path=get_settings().index_path,
+                )
                 total = len(all_results)
                 pages = (total + k - 1) // k
                 start = (page - 1) * k
@@ -232,6 +243,7 @@ def create_app(index_loader: Callable[[Path], Index] = load_index) -> FastAPI:
                 "pages": pages,
                 "total": total,
                 "scorer": scorer,
+                "mode": mode,
                 "results": results,
                 "error": error,
             },

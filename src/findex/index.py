@@ -7,6 +7,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
+
 from findex.corpus import Document, iter_documents
 from findex.tokenize import tokenize
 
@@ -83,6 +85,35 @@ class Index(Mapping[str, list[Posting]]):
 
     def all_doc_ids(self) -> set[int]:
         return set(self._doc_meta.keys())
+
+    @cached_property
+    def numpy_doc_lengths(self) -> np.ndarray:
+        """Довжини документів у NumPy-масиві (однаковий порядок із doc_id)."""
+        lengths = np.zeros(self.num_docs, dtype=np.int32)
+        for doc_id, meta in self._doc_meta.items():
+            if 0 <= doc_id < self.num_docs:
+                lengths[doc_id] = meta.length
+        return lengths
+
+    def numpy_postings(self, term: str) -> tuple[np.ndarray, np.ndarray]:
+        """Повертає doc_id/tf постингів терміна як масиви int32 без копіювання TF."""
+        postings = self._postings.get(term)
+        if not postings:
+            return (
+                np.empty(0, dtype=np.int32),
+                np.empty(0, dtype=np.int32),
+            )
+        doc_ids = np.fromiter(
+            (posting.doc_id for posting in postings),
+            dtype=np.int32,
+            count=len(postings),
+        )
+        tfs = np.fromiter(
+            (posting.tf for posting in postings),
+            dtype=np.int32,
+            count=len(postings),
+        )
+        return doc_ids, tfs
 
 
 def intersect_postings(left: list[Posting], right: list[Posting]) -> list[int]:
